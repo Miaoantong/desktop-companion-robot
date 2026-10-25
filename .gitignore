@@ -1,0 +1,41 @@
+# ===== Keil MDK 编译产物 =====
+*.o
+*.d
+*.crf
+*.iex
+*.htm
+*.map
+*.axf
+*.lnp
+*.sct
+*.dep
+*.bak
+*.plg
+*.lst
+*.fed
+*.tra
+*.build_log.htm
+JLinkLog.txt
+*.iex
+
+# ===== 编译输出目录 =====
+Objects/
+Listings/
+DebugConfig/
+RTE/_RTE_*
+
+# ===== Keil 用户配置（含个人路径，不入库）=====
+*.uvoptx
+*.uvguix.*
+*.uvopt
+
+# ===== 临时与日志 =====
+*.log
+*.tmp
+*.bak
+build*.log
+
+# ===== 系统文件 =====
+Thumbs.db
+desktop.ini
+.DS_Store
