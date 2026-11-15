@@ -39,13 +39,13 @@ AI 推理是秒级且抖动的，而"转头看你"必须在 150ms 内完成。�
 
 ## 阶段
 
-| 阶段 | 时间 | 内容 | 状态 |
-|---|---|---|---|
-| **P0** | 2026.11 – 2027.01 | 表情脸 + 转头收尾；参数化表情渲染；延迟测量框架 | 进行中 |
-| **P1** | 2027.02 – 2027.04 | **电流感知触觉**：摸头分级、柔顺退让、堵转保护 | 计划中 |
-| **P2** | 2027.05 – 2027.08 | ESP32-S3 接入；UART 协议；雷达在场感知 | 计划中 |
-| **P3** | 2027.09 – 2028.01 | 边缘侧行为识别；主动干预策略；记忆系统 | 计划中 |
-| **P4** | 2028.02 – 2028.05 | 外壳、benchmark、开源整理；对话模块（可选） | 计划中 |
+| 阶段 | 时间 | 内容 | 状态 | 追踪 |
+|---|---|---|---|---|
+| **P0** | 2026.11 – 2027.01 | 表情脸 + 转头收尾；参数化表情渲染；延迟测量框架 | 进行中 | [#1](https://github.com/Miaoantong/desktop-companion-robot/issues/1) |
+| **P1** | 2027.02 – 2027.04 | **电流感知触觉**：摸头分级、柔顺退让、堵转保护 | 计划中 | [#2](https://github.com/Miaoantong/desktop-companion-robot/issues/2) |
+| **P2** | 2027.05 – 2027.08 | ESP32-S3 接入；UART 协议；雷达在场感知 | 计划中 | [#3](https://github.com/Miaoantong/desktop-companion-robot/issues/3) |
+| **P3** | 2027.09 – 2028.01 | 边缘侧行为识别；主动干预策略；记忆系统 | 计划中 | [#4](https://github.com/Miaoantong/desktop-companion-robot/issues/4) |
+| **P4** | 2028.02 – 2028.05 | 外壳、benchmark、开源整理；对话模块（可选） | 计划中 | [#5](https://github.com/Miaoantong/desktop-companion-robot/issues/5) |
 
 ---
 
@@ -85,11 +85,12 @@ desktop-companion-robot
 ├── .gitignore
 ├── .github/
 │   ├── ISSUE_TEMPLATE/        # Bug / 功能 / 里程碑追踪模板
-│   ├── ISSUES/                # P0~P4 阶段追踪卡（待发布为 Issue）
+│   ├── ISSUES/                # P0~P4 追踪卡，已发布为 Issue #1~#5
 │   ├── PULL_REQUEST_TEMPLATE.md
 │   └── workflows/ci.yml       # 文档链接检查
 ├── scripts/
-│   └── check_docs.py          # 本地可跑：校验 Markdown 相对链接
+│   ├── check_docs.py          # 校验 Markdown 相对链接（CI 同一套）
+│   └── create_issues.py       # 从追踪卡发布 / 预填阶段 Issue
 ├── docs/                      # 01~06：规划、硬件、方案、路线、协作规范
 ├── hardware/                  # 接线说明（原理图 / 结构待补）
 └── firmware/
@@ -133,6 +134,8 @@ desktop-companion-robot
 
 分支与提交规范见 [`CONTRIBUTING.md`](CONTRIBUTING.md)，阶段与里程碑映射见
 [`docs/06_仓库协作规范.md`](docs/06_仓库协作规范.md)。提交前跑一次 `python scripts/check_docs.py`，CI 会做同一项检查。
+
+阶段进度以 [Issue #1–#5](https://github.com/Miaoantong/desktop-companion-robot/issues) 为准，验收清单在 Issue 里逐项打勾；正文的单一来源是 `.github/ISSUES/P0.md`–`P4.md`，改动验收标准时两处要同步更新。
 
 ---
 
