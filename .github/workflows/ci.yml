@@ -22,3 +22,8 @@ jobs:
 
       - name: 检查所有 Markdown 的相对链接
         run: python scripts/check_docs.py
+
+      - name: 校验仓库配置与脚本语法
+        run: |
+          python -c "import json; d=json.load(open('.github/repo-meta.json', encoding='utf-8')); assert isinstance(d.get('description'), str); assert all(isinstance(d.get(k), list) and d.get(k) for k in ('topics','labels','milestones'))"
+          python -m py_compile scripts/check_docs.py scripts/create_issues.py

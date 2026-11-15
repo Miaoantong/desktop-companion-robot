@@ -1,0 +1,65 @@
+{
+  "_comment": "仓库非代码配置的唯一来源。改完执行 python scripts/create_issues.py --setup 同步到 GitHub；--setup --dry-run 可先匿名预览。",
+  "description": "隐私优先、慢脑-快反射架构的桌面陪伴机器人；电流触觉 + 雷达在场感知，默认不采集图像",
+  "homepage": "",
+  "topics": [
+    "stm32",
+    "esp32-s3",
+    "embedded",
+    "companion-robot",
+    "sensorless-force-estimation",
+    "privacy-by-design",
+    "real-time",
+    "desktop-robot"
+  ],
+  "labels": [
+    {"name": "stage/P0", "color": "1D76DB", "description": "阶段 · P0"},
+    {"name": "stage/P1", "color": "1D76DB", "description": "阶段 · P1"},
+    {"name": "stage/P2", "color": "1D76DB", "description": "阶段 · P2"},
+    {"name": "stage/P3", "color": "1D76DB", "description": "阶段 · P3"},
+    {"name": "stage/P4", "color": "1D76DB", "description": "阶段 · P4"},
+    {"name": "area/firmware", "color": "5319E7", "description": "归属目录 / 层次 · firmware"},
+    {"name": "area/hardware", "color": "5319E7", "description": "归属目录 / 层次 · hardware"},
+    {"name": "area/docs", "color": "5319E7", "description": "归属目录 / 层次 · docs"},
+    {"name": "area/cognition", "color": "5319E7", "description": "归属目录 / 层次 · cognition"},
+    {"name": "area/ci", "color": "5319E7", "description": "归属目录 / 层次 · ci"},
+    {"name": "type/experiment", "color": "FBCA04", "description": "改动性质 · experiment"},
+    {"name": "type/benchmark", "color": "FBCA04", "description": "改动性质 · benchmark"},
+    {"name": "type/refactor", "color": "FBCA04", "description": "改动性质 · refactor"},
+    {"name": "constraint/realtime", "color": "D93F0B", "description": "硬约束 · realtime"},
+    {"name": "constraint/privacy", "color": "D93F0B", "description": "硬约束 · privacy"},
+    {"name": "constraint/offline", "color": "D93F0B", "description": "硬约束 · offline"}
+  ],
+  "milestones": [
+    {
+      "stage": "P0",
+      "title": "P0 表情脸 + 转头 + 可测量",
+      "due_on": "2027-01-31T23:59:59Z",
+      "description": "OLED 表情脸、双舵机转头、参数化渲染、延迟测量框架；结束时打 tag p0-face-neck"
+    },
+    {
+      "stage": "P1",
+      "title": "P1 电流感知触觉",
+      "due_on": "2027-04-30T23:59:59Z",
+      "description": "双通道电流采样、4 类分类、摸头分级、堵转保护、60 秒 demo；结束时打 tag p1-current-touch"
+    },
+    {
+      "stage": "P2",
+      "title": "P2 异构架构 + 隐私在场感知",
+      "due_on": "2027-08-31T23:59:59Z",
+      "description": "UART 协议、心跳降级、跨板时钟同步、唤醒词、雷达在场检测；结束时打 tag p2-heterogeneous"
+    },
+    {
+      "stage": "P3",
+      "title": "P3 认知层",
+      "due_on": "2028-01-31T23:59:59Z",
+      "description": "行为标签、主动干预四级、打扰成本建模、遗忘曲线记忆；结束时打 tag p3-cognition"
+    },
+    {
+      "stage": "P4",
+      "title": "P4 完整作品与开源整理",
+      "due_on": "2028-05-31T23:59:59Z",
+      "description": "外壳、benchmark、消融实验、开源资料、可选对话模块；结束时发 Release v1.0.0"
+    }
+  ]
+}

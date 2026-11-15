@@ -1,22 +1,24 @@
 #!/usr/bin/env python3
-"""阶段追踪 Issue 发布脚本，兼仓库协作元数据批量配置。
+"""阶段追踪 Issue 发布 + 仓库非代码配置同步（声明式、幂等、免 PAT）。
+
+配置来源：.github/repo-meta.json —— 改配置后跑一次 --setup 即可同步到 GitHub。
 
 用法：
-    python scripts/create_issues.py --dry-run                  # 预览将创建哪些 Issue
-    python scripts/create_issues.py --links                   # 输出预填「新建 Issue」链接
-    GITHUB_TOKEN=xxx python scripts/create_issues.py          # 创建 5 个阶段 Issue
-    python scripts/create_issues.py --setup --dry-run         # 匿名预览标签 / 里程碑 / 挂载
-    GITHUB_TOKEN=xxx python scripts/create_issues.py --setup  # 批量补齐并挂载
+    python scripts/create_issues.py --dry-run                # 预览将创建哪些 Issue
+    python scripts/create_issues.py --links                 # 输出预填新建 Issue 链接
+    python scripts/create_issues.py                        # 创建 5 个阶段 Issue
+    python scripts/create_issues.py --setup --dry-run       # 匿名预览全部仓库配置变更
+    python scripts/create_issues.py --setup                # 同步到 GitHub
 
---setup 做三件事，全部幂等（可重复运行）：
-    1. 补 16 个自定义 Labels（stage/ area/ type/ constraint/）
-    2. 建 5 个阶段 Milestones（含截止日）
-    3. 给阶段 Issue 打 stage/P? 标签并挂到对应 Milestone，保留已有标签
+--setup 同步：description / homepage / topics / 自定义标签 / 阶段里程碑 / Issue 挂载。
+全部幂等；更新 Issue 时保留它上面已有的其他标签。
 
-前置条件：一个只作用于本仓库、带 Issues: Read and write 的 fine-grained PAT。
-生成地址：https://github.com/settings/personal-access-tokens/new
+凭据自动解析（按优先级，不需要手动新建 PAT）：
+    1. 环境变量 GITHUB_TOKEN（显式覆盖，便于临时换身份）
+    2. gh auth token（本机装了 GitHub CLI 且已登录时）
+    3. git credential fill（复用 git push 使用的本机 OAuth 登录态）
 
-token 只从环境变量读取，绝不写进仓库、命令行参数或日志。只依赖 Python 3 标准库。
+token 只在内存中使用，不写文件、不进命令行参数、不打印。只依赖 Python 3 标准库。
 """
 
 from __future__ import annotations
@@ -24,6 +26,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -32,39 +36,61 @@ from urllib.parse import quote
 
 ROOT = Path(__file__).resolve().parent.parent
 CARDS = ROOT / ".github" / "ISSUES"
+CONFIG = ROOT / ".github" / "repo-meta.json"
 OWNER = "Miaoantong"
 REPO = "desktop-companion-robot"
-REPO_API = f"https://api.github.com/repos/{OWNER}/{REPO}"
+GITHUB_API = "https://api.github.com"
+REPO_API = f"{GITHUB_API}/repos/{OWNER}/{REPO}"
 API = f"{REPO_API}/issues"
 LABELS_API = f"{REPO_API}/labels"
 MILESTONES_API = f"{REPO_API}/milestones"
+TOPICS_API = f"{REPO_API}/topics"
 
-# 与 docs/06_仓库协作规范.md 第 5 节一致
-LABEL_GROUPS = (
-    ("stage", "1D76DB", "阶段", ("P0", "P1", "P2", "P3", "P4")),
-    ("area", "5319E7", "归属目录 / 层次", ("firmware", "hardware", "docs", "cognition", "ci")),
-    ("type", "FBCA04", "改动性质", ("experiment", "benchmark", "refactor")),
-    ("constraint", "D93F0B", "硬约束", ("realtime", "privacy", "offline")),
-)
-LABELS = [
-    {"name": f"{prefix}/{value}", "color": color, "description": f"{desc} · {value}"}
-    for prefix, color, desc, values in LABEL_GROUPS
-    for value in values
-]
 
-# 与 docs/06_仓库协作规范.md 第 4 节一致，截止日取各阶段末月
-MILESTONES = [
-    {"stage": "P0", "title": "P0 表情脸 + 转头 + 可测量", "due_on": "2027-01-31T23:59:59Z",
-     "description": "OLED 表情脸、双舵机转头、参数化渲染、延迟测量框架；结束时打 tag p0-face-neck"},
-    {"stage": "P1", "title": "P1 电流感知触觉", "due_on": "2027-04-30T23:59:59Z",
-     "description": "双通道电流采样、4 类分类、摸头分级、堵转保护、60 秒 demo；结束时打 tag p1-current-touch"},
-    {"stage": "P2", "title": "P2 异构架构 + 隐私在场感知", "due_on": "2027-08-31T23:59:59Z",
-     "description": "UART 协议、心跳降级、跨板时钟同步、唤醒词、雷达在场检测；结束时打 tag p2-heterogeneous"},
-    {"stage": "P3", "title": "P3 认知层", "due_on": "2028-01-31T23:59:59Z",
-     "description": "行为标签、主动干预四级、打扰成本建模、遗忘曲线记忆；结束时打 tag p3-cognition"},
-    {"stage": "P4", "title": "P4 完整作品与开源整理", "due_on": "2028-05-31T23:59:59Z",
-     "description": "外壳、benchmark、消融实验、开源资料、可选对话模块；结束时发 Release v1.0.0"},
-]
+def load_config() -> dict:
+    if not CONFIG.exists():
+        raise FileNotFoundError(f"缺少配置文件：{CONFIG}")
+    data = json.loads(CONFIG.read_text(encoding="utf-8"))
+    for key in ("labels", "milestones", "topics"):
+        if key not in data:
+            raise ValueError(f"{CONFIG} 缺少字段 {key}")
+    return data
+
+
+def resolve_token() -> tuple[str, str]:
+    """按优先级找本机的长期 GitHub 凭据，返回 (token, 来源说明)。"""
+    explicit = os.environ.get("GITHUB_TOKEN", "").strip()
+    if explicit:
+        return explicit, "环境变量 GITHUB_TOKEN"
+
+    gh = shutil.which("gh")
+    if gh:
+        try:
+            out = subprocess.run(
+                [gh, "auth", "token"], capture_output=True, text=True, timeout=10
+            )
+            token = out.stdout.strip()
+            if out.returncode == 0 and token:
+                return token, "GitHub CLI 登录态（gh auth token）"
+        except (OSError, subprocess.SubprocessError):
+            pass
+
+    try:
+        env = dict(os.environ, GIT_TERMINAL_PROMPT="0")
+        out = subprocess.run(
+            ["git", "credential", "fill"],
+            input="protocol=https\nhost=github.com\n\n",
+            capture_output=True, text=True, timeout=15, env=env,
+        )
+        for line in out.stdout.splitlines():
+            if line.startswith("password="):
+                token = line.split("=", 1)[1].strip()
+                if token:
+                    return token, "本机 Git 凭据（与 git push 同一份 OAuth 登录态）"
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+    return "", "无"
 
 
 def parse_card(path: Path) -> tuple[str, str]:
@@ -85,7 +111,7 @@ def api_request(url: str, token: str, data=None, method: str | None = None):
     headers = {
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": "desktop-companion-robot-issue-creator",
+        "User-Agent": "desktop-companion-robot-repo-sync",
     }
     if token:
         headers["Authorization"] = f"Bearer {token}"
@@ -109,9 +135,49 @@ def existing_titles(token: str) -> set[str]:
     return {issue["title"] for issue in issues}
 
 
+def sync_about(token: str, config: dict, dry_run: bool) -> int:
+    """同步 description / homepage / topics；权限不足时只警告，不阻断其余配置。"""
+    try:
+        repo = api_request(REPO_API, token)
+        want_desc = config.get("description", "") or ""
+        want_home = config.get("homepage", "") or ""
+        want_topics = config.get("topics", []) or []
+        need_about = (repo.get("description") or "") != want_desc or (repo.get("homepage") or "") != want_home
+        # GitHub 返回的 topics 按字母排序，比较时忽略顺序，避免每次重复写入
+        need_topics = sorted(repo.get("topics") or []) != sorted(want_topics)
+
+        print(f"About：description / homepage {'待更新' if need_about else '已就绪'}，"
+              f"topics {'待更新' if need_topics else '已就绪'}（目标 {len(want_topics)} 个）")
+        if dry_run:
+            if need_about:
+                print(f"  [预览] description → {want_desc}")
+            if need_topics:
+                print(f"  [预览] topics → {', '.join(want_topics)}")
+            return 0
+
+        changed = 0
+        if need_about:
+            api_request(REPO_API, token,
+                        {"description": want_desc, "homepage": want_home}, method="PATCH")
+            print("  [已更新] description / homepage")
+            changed += 1
+        if need_topics:
+            api_request(TOPICS_API, token, {"names": want_topics}, method="PUT")
+            print(f"  [已更新] topics（{len(want_topics)} 个）")
+            changed += 1
+        return changed
+    except urllib.error.HTTPError as error:
+        print(f"  [警告] About 写入失败 HTTP {error.code}（通常需要仓库管理权限），跳过；其余配置继续",
+              file=sys.stderr)
+        return 0
+
+
 def setup_repo(token: str, dry_run: bool = False) -> int:
-    """批量补齐 Labels / Milestones，并把阶段 Issue 挂载到位。"""
-    print(f"--- 仓库协作元数据（{'预览' if dry_run else '执行'}）---")
+    """按 .github/repo-meta.json 幂等同步仓库非代码配置。"""
+    config = load_config()
+    print(f"--- 仓库非代码配置（{'匿名预览' if dry_run else '同步执行'}）---")
+    sync_about(token, config, dry_run)
+    print()
 
     label_names = {x["name"] for x in api_request(f"{LABELS_API}?per_page=100", token) or []}
     milestone_numbers = {
@@ -120,7 +186,9 @@ def setup_repo(token: str, dry_run: bool = False) -> int:
     }
     issues = api_request(f"{API}?state=all&per_page=100", token) or []
 
-    missing_labels = [x for x in LABELS if x["name"] not in label_names]
+    labels = config["labels"]
+    milestones = config["milestones"]
+    missing_labels = [x for x in labels if x["name"] not in label_names]
     print(f"Labels：远端已有 {len(label_names)} 个，待补 {len(missing_labels)} 个")
     if dry_run:
         for spec in missing_labels:
@@ -130,7 +198,7 @@ def setup_repo(token: str, dry_run: bool = False) -> int:
             api_request(LABELS_API, token, spec)
             print(f"  [已创建] 标签 {spec['name']}")
 
-    missing_ms = [m for m in MILESTONES if m["title"] not in milestone_numbers]
+    missing_ms = [m for m in milestones if m["title"] not in milestone_numbers]
     print(f"Milestones：远端已有 {len(milestone_numbers)} 个，待补 {len(missing_ms)} 个")
     if dry_run:
         for spec in missing_ms:
@@ -138,10 +206,8 @@ def setup_repo(token: str, dry_run: bool = False) -> int:
     else:
         for spec in missing_ms:
             payload = {
-                "title": spec["title"],
-                "state": "open",
-                "due_on": spec["due_on"],
-                "description": spec["description"],
+                "title": spec["title"], "state": "open",
+                "due_on": spec["due_on"], "description": spec.get("description", ""),
             }
             result = api_request(MILESTONES_API, token, payload)
             milestone_numbers[spec["title"]] = result["number"]
@@ -149,7 +215,7 @@ def setup_repo(token: str, dry_run: bool = False) -> int:
 
     print("阶段 Issue 挂载：")
     updated = 0
-    for spec in MILESTONES:
+    for spec in milestones:
         stage = spec["stage"]
         issue = next((x for x in issues if x["title"].startswith(f"[{stage}]")), None)
         if issue is None:
@@ -173,15 +239,14 @@ def setup_repo(token: str, dry_run: bool = False) -> int:
             print(f"  [失败] #{issue['number']}：里程碑 {spec['title']} 未创建", file=sys.stderr)
             return 1
         api_request(
-            f"{API}/{issue['number']}",
-            token,
-            {"labels": wanted, "milestone": target_ms},
-            method="PATCH",
+            f"{API}/{issue['number']}", token,
+            {"labels": wanted, "milestone": target_ms}, method="PATCH",
         )
         print(f"  [已更新] #{issue['number']} → {stage_label} + {spec['title']}（保留原有 {len(current)} 个标签）")
         updated += 1
 
     print(f"\n完成：标签 +{len(missing_labels)}，里程碑 +{len(missing_ms)}，Issue 更新 {updated} 个")
+    print("配置来源：.github/repo-meta.json（改动这里后重跑一次即可）")
     return 0
 
 
@@ -189,29 +254,38 @@ def http_error(error: urllib.error.HTTPError) -> int:
     detail = error.read().decode("utf-8", "replace")
     print(f"失败：HTTP {error.code}: {detail[:200]}", file=sys.stderr)
     if error.code == 401:
-        print("token 无效或已被撤销 —— 请重新生成 fine-grained PAT", file=sys.stderr)
+        print("凭据无效或已被撤销 —— 检查本机 git 凭据，或重新登录 GitHub CLI", file=sys.stderr)
     elif error.code == 403:
-        print("该 token 需要本仓库的 Issues: Read and write 权限，或已触发限流", file=sys.stderr)
+        print("权限不足或触发限流 —— 该凭据需要本仓库的仓库管理 / Issues 写权限", file=sys.stderr)
     return 1
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="发布阶段追踪 Issue / 批量配置仓库协作元数据")
+    parser = argparse.ArgumentParser(description="发布阶段追踪 Issue / 同步仓库非代码配置")
     parser.add_argument("--dry-run", action="store_true", help="只预览，不写入")
     parser.add_argument("--links", action="store_true", help="输出 GitHub 预填新建 Issue 链接")
-    parser.add_argument("--setup", action="store_true", help="批量补齐 Labels / Milestones 并挂载阶段 Issue")
+    parser.add_argument("--setup", action="store_true", help="按 repo-meta.json 同步仓库非代码配置")
     args = parser.parse_args()
 
     if args.setup:
-        token = os.environ.get("GITHUB_TOKEN", "").strip()
-        if not token and not args.dry_run:
-            print("缺少 GITHUB_TOKEN。用法：GITHUB_TOKEN=xxx python scripts/create_issues.py --setup",
-                  file=sys.stderr)
-            return 1
+        if args.dry_run:
+            token, source = "", "匿名预览（不读取凭据）"
+        else:
+            token, source = resolve_token()
+            if not token:
+                print("未找到可用的 GitHub 凭据。可设置 GITHUB_TOKEN，或先跑一次 gh auth login。",
+                      file=sys.stderr)
+                return 1
+        print(f"凭据：{source}")
         try:
+            if token:
+                api_request(f"{GITHUB_API}/user", token)  # 提前验证，失败时给出清晰报错
             return setup_repo(token, args.dry_run)
         except urllib.error.HTTPError as error:
             return http_error(error)
+        except (FileNotFoundError, ValueError, KeyError) as error:
+            print(f"配置错误：{error}", file=sys.stderr)
+            return 1
 
     cards = load_cards()
     if not cards:
@@ -230,13 +304,15 @@ def main() -> int:
     if args.dry_run:
         for title, body in cards:
             print(f"[预览] {title}  （正文 {len(body)} 字符）")
-        print(f"\n共 {len(cards)} 张卡；设置 GITHUB_TOKEN 后去掉 --dry-run 即可创建")
+        print(f"\n共 {len(cards)} 张卡；去掉 --dry-run 即可创建（凭据自动解析）")
         return 0
 
-    token = os.environ.get("GITHUB_TOKEN", "").strip()
+    token, source = resolve_token()
     if not token:
-        print("缺少 GITHUB_TOKEN。用法：GITHUB_TOKEN=xxx python scripts/create_issues.py", file=sys.stderr)
+        print("未找到可用的 GitHub 凭据。可设置 GITHUB_TOKEN，或先跑一次 gh auth login。",
+              file=sys.stderr)
         return 1
+    print(f"凭据：{source}")
 
     existing = existing_titles(token)
     created = 0

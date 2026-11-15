@@ -86,11 +86,12 @@ desktop-companion-robot
 ├── .github/
 │   ├── ISSUE_TEMPLATE/        # Bug / 功能 / 里程碑追踪模板
 │   ├── ISSUES/                # P0~P4 追踪卡，已发布为 Issue #1~#5
+│   ├── repo-meta.json         # 仓库非代码配置（描述 / topics / 标签 / 里程碑）
 │   ├── PULL_REQUEST_TEMPLATE.md
-│   └── workflows/ci.yml       # 文档链接检查
+│   └── workflows/ci.yml       # 文档链接 + 配置校验
 ├── scripts/
 │   ├── check_docs.py          # 校验 Markdown 相对链接（CI 同一套）
-│   └── create_issues.py       # 发布阶段 Issue；--setup 批量配置标签 / 里程碑
+│   └── create_issues.py       # 发布阶段 Issue；--setup 同步仓库非代码配置
 ├── docs/                      # 01~06：规划、硬件、方案、路线、协作规范
 ├── hardware/                  # 接线说明（原理图 / 结构待补）
 └── firmware/
@@ -136,6 +137,8 @@ desktop-companion-robot
 [`docs/06_仓库协作规范.md`](docs/06_仓库协作规范.md)。提交前跑一次 `python scripts/check_docs.py`，CI 会做同一项检查。
 
 阶段进度以 [Issue #1–#5](https://github.com/Miaoantong/desktop-companion-robot/issues) 为准，验收清单在 Issue 里逐项打勾；正文的单一来源是 `.github/ISSUES/P0.md`–`P4.md`，改动验收标准时两处要同步更新。
+
+仓库非代码配置（description / topics / 标签 / 里程碑 / Issue 挂载）集中在 [`.github/repo-meta.json`](.github/repo-meta.json)：改完执行 `python scripts/create_issues.py --setup` 即可同步，凭据自动复用本机 Git 登录态，**不需要新建 PAT**。
 
 ---
 
