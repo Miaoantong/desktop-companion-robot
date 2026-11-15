@@ -90,7 +90,7 @@ desktop-companion-robot
 │   └── workflows/ci.yml       # 文档链接检查
 ├── scripts/
 │   ├── check_docs.py          # 校验 Markdown 相对链接（CI 同一套）
-│   └── create_issues.py       # 从追踪卡发布 / 预填阶段 Issue
+│   └── create_issues.py       # 发布阶段 Issue；--setup 批量配置标签 / 里程碑
 ├── docs/                      # 01~06：规划、硬件、方案、路线、协作规范
 ├── hardware/                  # 接线说明（原理图 / 结构待补）
 └── firmware/

@@ -14,7 +14,7 @@
 
 - 改动验收标准时，`docs/01_项目规划.md`、这里的卡片、GitHub 上的 Issue 正文**要同步更新**，否则下次重新发布会把 GitHub 侧的改动覆盖掉。
 - 卡片标题取第一行 `# [P?] ...`，正文取 `---` 以下内容；[`../../scripts/create_issues.py`](../../scripts/create_issues.py) 按这个格式解析，不要改格式。
-- 发布后仍需手动补：给 5 个 Issue 打 `stage/P?` 标签、挂到对应 Milestone；建议值见 [`../../docs/06_仓库协作规范.md`](../../docs/06_仓库协作规范.md) 第 5、7 节。
+- 标签与里程碑用 `scripts/create_issues.py --setup` 批量补齐并挂载（幂等、保留已有标签），或在网页手动补；建议值见 [`../../docs/06_仓库协作规范.md`](../../docs/06_仓库协作规范.md) 第 5、7 节。
 
 ## 为什么用脚本发布（历史记录）
 
@@ -37,3 +37,17 @@ $env:GITHUB_TOKEN = "xxx"; python scripts/create_issues.py
 - 生成 fine-grained PAT：https://github.com/settings/personal-access-tokens/new —— Expiration 选最短（如 7 天，用完删除）；Repository access → **Only select repositories** → 只勾本仓库；Permissions → **Issues: Read and write**，其余保持 No access。
 - token 只从环境变量读取，不写进任何文件、不提交；用完立刻在 PAT 页面 Delete。
 - 本机实测 Python 标准库访问 `api.github.com` 可直连（HTTP 200），**不需要**像 `git push` 那样临时关闭证书校验。
+- `401 Bad credentials` = token 无效或已撤销，重新生成即可；`403` = 权限不足或触发限流。
+
+## 批量补齐标签与里程碑（`--setup`）
+
+一次创建 16 个自定义标签、5 个带截止日的阶段里程碑，并给 #1–#5 打上 `stage/P?`、挂到对应里程碑：
+
+```bash
+python scripts/create_issues.py --setup --dry-run          # 匿名预览，不需要 token
+GITHUB_TOKEN=xxx python scripts/create_issues.py --setup  # 真正执行
+```
+
+Windows PowerShell 用 `$env:GITHUB_TOKEN = "xxx"; python scripts/create_issues.py --setup`。
+
+`--setup` 全部幂等：已存在的标签 / 里程碑会跳过；更新 Issue 时保留它上面已有的其他标签，只补 `stage/P?` 并挂里程碑。重复运行安全，可用来检查是否全部就绪。
