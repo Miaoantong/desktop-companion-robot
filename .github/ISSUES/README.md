@@ -14,7 +14,7 @@
 
 - 改动验收标准时，`docs/01_项目规划.md`、这里的卡片、GitHub 上的 Issue 正文**要同步更新**，否则下次重新发布会把 GitHub 侧的改动覆盖掉。
 - 卡片标题取第一行 `# [P?] ...`，正文取 `---` 以下内容；[`../../scripts/create_issues.py`](../../scripts/create_issues.py) 按这个格式解析，不要改格式。
-- 仓库非代码配置（description / topics / 标签 / 里程碑 / Issue 挂载）统一放在 [`../repo-meta.json`](../repo-meta.json)，改完跑一次 `--setup`；详见 [`../../docs/06_仓库协作规范.md`](../../docs/06_仓库协作规范.md) 第 7 节。
+- 仓库非代码配置（description / topics / 标签 / 里程碑 / Issue 挂载 / main 分支保护）统一放在 [`../repo-meta.json`](../repo-meta.json)，改完跑一次 `--setup`，远端被误改也会被修回；详见 [`../../docs/06_仓库协作规范.md`](../../docs/06_仓库协作规范.md) 第 7 节。
 
 ## 凭据：不需要新建 PAT
 
@@ -32,11 +32,14 @@
 python scripts/create_issues.py --dry-run                # 预览将创建哪些 Issue
 python scripts/create_issues.py                        # 补发缺失的阶段 Issue（跳过同名）
 python scripts/create_issues.py --links                 # 不用凭据，输出预填新建 Issue 链接
-python scripts/create_issues.py --setup --dry-run       # 匿名预览仓库配置变更
+python scripts/create_issues.py --check-config          # 校验配置结构（CI 同款）
+python scripts/create_issues.py --setup --dry-run       # 预览仓库配置变更，不写入
 python scripts/create_issues.py --setup                # 按 repo-meta.json 同步全部非代码配置
 ```
 
-`--setup` 全部幂等：已存在的标签 / 里程碑会跳过；更新 Issue 时保留它上面已有的其他标签，只补 `stage/P?` 并挂里程碑。重复运行可以当作配置体检。
+`--setup` 全部幂等：已存在的标签 / 里程碑会跳过；分支保护逐字段比较，只在远端与配置不一致时重写；更新 Issue 时保留它上面已有的其他标签，只补 `stage/P?` 并挂里程碑。重复运行可以当作配置体检，远端被误改也会被修回。
+
+匿名 `--setup --dry-run` 下，分支保护只展示本地目标值（该端点需认证）；显式设置 `GITHUB_TOKEN` 后可获得完整预览。
 
 ## 为什么用脚本（历史记录）
 

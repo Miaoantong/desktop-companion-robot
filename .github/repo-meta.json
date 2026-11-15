@@ -1,5 +1,5 @@
 {
-  "_comment": "仓库非代码配置的唯一来源。改完执行 python scripts/create_issues.py --setup 同步到 GitHub；--setup --dry-run 可先匿名预览。",
+  "_comment": "仓库非代码配置的唯一来源。改完执行 python scripts/create_issues.py --setup 同步到 GitHub；--setup --dry-run 可预览；--check-config 校验本文件合法性。",
   "description": "隐私优先、慢脑-快反射架构的桌面陪伴机器人；电流触觉 + 雷达在场感知，默认不采集图像",
   "homepage": "",
   "topics": [
@@ -61,5 +61,20 @@
       "due_on": "2028-05-31T23:59:59Z",
       "description": "外壳、benchmark、消融实验、开源资料、可选对话模块；结束时发 Release v1.0.0"
     }
-  ]
+  ],
+  "branch_protection": {
+    "_comment": "enforce_admins 保持 false（owner 可直接 push）；contexts 必须与 .github/workflows/ci.yml 里 job 的 name 一致。改这里的规则后跑一次 --setup 即可同步，不要只在网页上点。",
+    "branch": "main",
+    "enabled": true,
+    "required_status_checks": {
+      "strict": false,
+      "contexts": ["Markdown 相对链接完整性"]
+    },
+    "enforce_admins": false,
+    "required_pull_request_reviews": null,
+    "restrictions": null,
+    "required_linear_history": false,
+    "allow_force_pushes": false,
+    "allow_deletions": false
+  }
 }

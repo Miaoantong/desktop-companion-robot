@@ -7,16 +7,20 @@
     python scripts/create_issues.py --dry-run                # 预览将创建哪些 Issue
     python scripts/create_issues.py --links                 # 输出预填新建 Issue 链接
     python scripts/create_issues.py                        # 创建 5 个阶段 Issue
-    python scripts/create_issues.py --setup --dry-run       # 匿名预览全部仓库配置变更
+    python scripts/create_issues.py --check-config          # 校验 repo-meta.json（CI 同款）
+    python scripts/create_issues.py --setup --dry-run       # 预览全部仓库配置变更
     python scripts/create_issues.py --setup                # 同步到 GitHub
 
---setup 同步：description / homepage / topics / 自定义标签 / 阶段里程碑 / Issue 挂载。
-全部幂等；更新 Issue 时保留它上面已有的其他标签。
+--setup 同步：description / homepage / topics / 自定义标签 / 阶段里程碑 /
+Issue 挂载 / main 分支保护。全部幂等；更新 Issue 时保留它上面已有的其他标签。
 
 凭据自动解析（按优先级，不需要手动新建 PAT）：
     1. 环境变量 GITHUB_TOKEN（显式覆盖，便于临时换身份）
     2. gh auth token（本机装了 GitHub CLI 且已登录时）
     3. git credential fill（复用 git push 使用的本机 OAuth 登录态）
+
+--setup --dry-run 默认匿名：只读取公开数据；分支保护端点需要认证，
+此时仅展示本地目标值。显式设置 GITHUB_TOKEN 可获得完整预览。
 
 token 只在内存中使用，不写文件、不进命令行参数、不打印。只依赖 Python 3 标准库。
 """
@@ -45,16 +49,61 @@ API = f"{REPO_API}/issues"
 LABELS_API = f"{REPO_API}/labels"
 MILESTONES_API = f"{REPO_API}/milestones"
 TOPICS_API = f"{REPO_API}/topics"
+BRANCHES_API = f"{REPO_API}/branches"
+PROTECTION_KEYS = (
+    "required_status_checks",
+    "enforce_admins",
+    "required_pull_request_reviews",
+    "restrictions",
+    "required_linear_history",
+    "allow_force_pushes",
+    "allow_deletions",
+)
+
+
+def validate_config(data: dict) -> dict:
+    """校验声明式配置的结构；CI 与本地共用同一套判断。"""
+    for key in ("description", "topics", "labels", "milestones", "branch_protection"):
+        if key not in data:
+            raise ValueError(f"{CONFIG.name} 缺少字段 {key}")
+    if not isinstance(data["description"], str):
+        raise ValueError("description 必须是字符串")
+    for key in ("topics", "labels", "milestones"):
+        if not isinstance(data[key], list) or not data[key]:
+            raise ValueError(f"{key} 必须是非空数组")
+    for label in data["labels"]:
+        if not isinstance(label, dict) or not all(k in label for k in ("name", "color")):
+            raise ValueError(f"标签缺少 name / color：{label}")
+    for milestone in data["milestones"]:
+        if not isinstance(milestone, dict) or not all(
+            k in milestone for k in ("stage", "title", "due_on")
+        ):
+            raise ValueError(f"里程碑缺少 stage / title / due_on：{milestone}")
+    stages = [m["stage"] for m in data["milestones"]]
+    if len(stages) != len(set(stages)):
+        raise ValueError("里程碑 stage 不能重复")
+
+    bp = data["branch_protection"]
+    if not isinstance(bp, dict):
+        raise ValueError("branch_protection 必须是对象")
+    for key in ("branch", "enabled", "required_status_checks", "enforce_admins",
+                "required_linear_history", "allow_force_pushes", "allow_deletions"):
+        if key not in bp:
+            raise ValueError(f"branch_protection 缺少字段 {key}")
+    if not isinstance(bp["enabled"], bool) or not isinstance(bp["enforce_admins"], bool):
+        raise ValueError("branch_protection.enabled / enforce_admins 必须是布尔值")
+    rsc = bp["required_status_checks"]
+    if not isinstance(rsc, dict) or not isinstance(rsc.get("contexts"), list) or not rsc["contexts"]:
+        raise ValueError("required_status_checks.contexts 必须是非空数组")
+    if not isinstance(rsc.get("strict", False), bool):
+        raise ValueError("required_status_checks.strict 必须是布尔值")
+    return data
 
 
 def load_config() -> dict:
     if not CONFIG.exists():
         raise FileNotFoundError(f"缺少配置文件：{CONFIG}")
-    data = json.loads(CONFIG.read_text(encoding="utf-8"))
-    for key in ("labels", "milestones", "topics"):
-        if key not in data:
-            raise ValueError(f"{CONFIG} 缺少字段 {key}")
-    return data
+    return validate_config(json.loads(CONFIG.read_text(encoding="utf-8")))
 
 
 def resolve_token() -> tuple[str, str]:
@@ -123,7 +172,8 @@ def api_request(url: str, token: str, data=None, method: str | None = None):
         method = "POST" if data is not None else "GET"
     request = urllib.request.Request(url, data=body, headers=headers, method=method)
     with urllib.request.urlopen(request, timeout=30) as response:
-        return json.loads(response.read().decode("utf-8"))
+        raw = response.read().decode("utf-8")
+        return json.loads(raw) if raw.strip() else None
 
 
 def existing_titles(token: str) -> set[str]:
@@ -172,11 +222,103 @@ def sync_about(token: str, config: dict, dry_run: bool) -> int:
         return 0
 
 
+def protection_view(source: dict, is_remote: bool) -> dict:
+    """把本地配置或远端响应规范化成同一结构，便于逐字段比较。"""
+    rsc = source.get("required_status_checks") or {}
+
+    def flag(key: str) -> bool:
+        value = source.get(key)
+        if is_remote:
+            return bool((value or {}).get("enabled", False))
+        return bool(value)
+
+    return {
+        "contexts": sorted(rsc.get("contexts") or []),
+        "strict": bool(rsc.get("strict", False)),
+        "enforce_admins": flag("enforce_admins"),
+        "required_pull_request_reviews": source.get("required_pull_request_reviews"),
+        "restrictions": source.get("restrictions"),
+        "required_linear_history": flag("required_linear_history"),
+        "allow_force_pushes": flag("allow_force_pushes"),
+        "allow_deletions": flag("allow_deletions"),
+    }
+
+
+def protection_payload(spec: dict) -> dict:
+    """只取 GitHub 分支保护 API 接受的字段，忽略 _comment / branch / enabled。"""
+    return {key: spec.get(key) for key in PROTECTION_KEYS}
+
+
+def sync_branch_protection(token: str, config: dict, dry_run: bool) -> int:
+    """幂等同步分支保护；匿名预览或权限不足时只提示，不阻断其余配置。"""
+    spec = config["branch_protection"]
+    branch = spec["branch"]
+    url = f"{BRANCHES_API}/{branch}/protection"
+    want = protection_view(spec, False)
+    print(f"分支保护：{branch} · enabled={spec['enabled']} · "
+          f"必需检查={want['contexts']} · enforce_admins={want['enforce_admins']}")
+
+    if not token:
+        print("  [预览] 匿名模式无法核对远端（该端点需认证），仅展示本地目标值")
+        print("        显式设置 GITHUB_TOKEN 后重跑 --setup --dry-run 可获得完整预览")
+        return 0
+
+    try:
+        remote = api_request(url, token)
+    except urllib.error.HTTPError as error:
+        if error.code == 404:
+            remote = None  # 尚未启用保护
+        else:
+            print(f"  [警告] 读取分支保护失败 HTTP {error.code}（需要仓库管理权限），跳过；其余配置继续",
+                  file=sys.stderr)
+            return 0
+
+    current = protection_view(remote, True) if remote is not None else None
+    enabled = bool(spec["enabled"])
+
+    if not enabled:
+        if remote is None:
+            print("  [跳过] 已就绪（按配置不启用保护）")
+            return 0
+        if dry_run:
+            print("  [预览] 将关闭分支保护（DELETE）")
+            return 0
+        try:
+            api_request(url, token, method="DELETE")
+        except urllib.error.HTTPError as error:
+            print(f"  [警告] 关闭保护失败 HTTP {error.code}，跳过；其余配置继续", file=sys.stderr)
+            return 0
+        print("  [已更新] 已按配置关闭分支保护")
+        return 1
+
+    if remote is None:
+        reason = "远端未启用保护"
+    elif current != want:
+        diffs = [key for key in want if current.get(key) != want.get(key)]
+        reason = "远端与配置不一致：" + ", ".join(diffs)
+    else:
+        print("  [跳过] 已就绪（远端与配置一致）")
+        return 0
+
+    if dry_run:
+        print(f"  [预览] 将按配置写入保护规则（{reason}）")
+        return 0
+    try:
+        api_request(url, token, protection_payload(spec), method="PUT")
+    except urllib.error.HTTPError as error:
+        print(f"  [警告] 写入保护失败 HTTP {error.code}（需要仓库管理权限），跳过；其余配置继续",
+              file=sys.stderr)
+        return 0
+    print(f"  [已更新] 保护规则已按配置写入（{reason}）")
+    return 1
+
+
 def setup_repo(token: str, dry_run: bool = False) -> int:
     """按 .github/repo-meta.json 幂等同步仓库非代码配置。"""
     config = load_config()
-    print(f"--- 仓库非代码配置（{'匿名预览' if dry_run else '同步执行'}）---")
+    print(f"--- 仓库非代码配置（{'预览' if dry_run else '同步执行'}）---")
     sync_about(token, config, dry_run)
+    sync_branch_protection(token, config, dry_run)
     print()
 
     label_names = {x["name"] for x in api_request(f"{LABELS_API}?per_page=100", token) or []}
@@ -265,11 +407,24 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true", help="只预览，不写入")
     parser.add_argument("--links", action="store_true", help="输出 GitHub 预填新建 Issue 链接")
     parser.add_argument("--setup", action="store_true", help="按 repo-meta.json 同步仓库非代码配置")
+    parser.add_argument("--check-config", action="store_true", help="校验 repo-meta.json 结构（CI 同款）")
     args = parser.parse_args()
+
+    if args.check_config:
+        try:
+            cfg = load_config()
+        except (FileNotFoundError, ValueError) as error:
+            print(f"配置错误：{error}", file=sys.stderr)
+            return 1
+        print(f"配置校验通过：{len(cfg['topics'])} 个 topics、{len(cfg['labels'])} 个标签、"
+              f"{len(cfg['milestones'])} 个里程碑、分支保护 "
+              f"{cfg['branch_protection']['branch']}（enabled={cfg['branch_protection']['enabled']}）")
+        return 0
 
     if args.setup:
         if args.dry_run:
-            token, source = "", "匿名预览（不读取凭据）"
+            token = os.environ.get("GITHUB_TOKEN", "").strip()
+            source = "环境变量 GITHUB_TOKEN（只读预览）" if token else "匿名预览（不读取凭据）"
         else:
             token, source = resolve_token()
             if not token:
