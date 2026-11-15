@@ -9,16 +9,26 @@
 **① 脚本 + 个人 token（推荐，可重复执行）**
 
 1. 生成 fine-grained PAT：https://github.com/settings/personal-access-tokens/new
-   - Repository access 只选本仓库
-   - Permissions → Repository permissions → **Issues: Read and write**
+   - Expiration 选最短（如 7 天，用完删除）
+   - Resource owner 选自己的账号；Repository access → **Only select repositories** → 只勾本仓库
+   - Permissions → Repository permissions → **Issues: Read and write**（其余保持 No access）
 2. 在项目根目录执行（token 只走环境变量，不写进仓库）：
 
 ```bash
 python scripts/create_issues.py --dry-run            # 先预览
-GITHUB_TOKEN=xxx python scripts/create_issues.py    # 真正创建
+GITHUB_TOKEN=xxx python scripts/create_issues.py    # Git Bash / macOS / Linux
 ```
 
-脚本会读取本目录的 `P0.md`–`P4.md`，自动跳过同名 Issue，成功后打印编号与链接。
+Windows PowerShell 写法：
+
+```powershell
+$env:GITHUB_TOKEN = "xxx"; python scripts/create_issues.py
+```
+
+脚本会读取本目录的 `P0.md`–`P4.md`，自动跳过同名 Issue，成功后打印编号与链接，最后输出 `完成：新建 5 个，跳过 0 个`。
+
+> token 不要写进任何文件、不要提交；有效期设短，用完立刻在 PAT 页面 Delete。
+> 本机实测 Python 标准库访问 `api.github.com` 可直连（HTTP 200），**不需要**像 `git push` 那样临时关闭证书校验。
 
 **② 预填链接（不用 token）**
 
