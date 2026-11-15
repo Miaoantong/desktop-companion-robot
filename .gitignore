@@ -39,3 +39,19 @@ build*.log
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# ===== 编辑器与后续阶段工具链（P2/P3）=====
+.vscode/
+.idea/
+.pio/
+build/
+cmake-build-*/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# ===== 本地草稿（不入库）=====
+scratch/
+*.local.md
+*.csv.tmp

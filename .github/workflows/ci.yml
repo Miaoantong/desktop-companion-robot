@@ -1,0 +1,24 @@
+name: 文档检查
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  docs:
+    name: Markdown 相对链接完整性
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v4
+
+      - name: 准备 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 检查所有 Markdown 的相对链接
+        run: python scripts/check_docs.py
