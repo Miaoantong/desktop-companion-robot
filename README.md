@@ -85,6 +85,7 @@ desktop-companion-robot
 ├── .gitignore
 ├── .github/
 │   ├── ISSUE_TEMPLATE/        # Bug / 功能 / 里程碑追踪模板
+│   ├── ISSUES/                # P0~P4 阶段追踪卡（待发布为 Issue）
 │   ├── PULL_REQUEST_TEMPLATE.md
 │   └── workflows/ci.yml       # 文档链接检查
 ├── scripts/
