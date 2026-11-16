@@ -1,4 +1,4 @@
-name: 文档检查
+name: 持续集成
 
 on:
   push:
@@ -27,3 +27,30 @@ jobs:
         run: |
           python scripts/create_issues.py --check-config
           python -m py_compile scripts/check_docs.py scripts/create_issues.py
+
+  firmware:
+    # job 的 name 会被分支保护当作 status check 的 context，
+    # 改名必须同步 .github/repo-meta.json 的 required_status_checks.contexts。
+    name: 固件逻辑单元测试（host）
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v4
+
+      - name: 打印工具链版本
+        run: |
+          gcc --version | head -1
+          make --version | head -1
+
+      - name: 编译并运行 host 端单元测试
+        run: make -C firmware test
+
+      - name: 确认 app/ 没有反向依赖 HAL
+        # 这是三层分层的底线：app/ 一旦 include HAL，host 编译就会失败；
+        # 这里额外做一次文本检查，让报错信息比编译器更直白。
+        run: |
+          if grep -rniE '#include[[:space:]]*[<"](stm32|cmsis|core_cm)' firmware/app; then
+            echo "::error::firmware/app 里出现了 HAL / CMSIS 头文件，违反 app → bsp → platform 单向依赖"
+            exit 1
+          fi
+          echo "app/ 未引用 HAL / CMSIS，分层检查通过"

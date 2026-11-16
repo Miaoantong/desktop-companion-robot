@@ -68,7 +68,7 @@
     "enabled": true,
     "required_status_checks": {
       "strict": false,
-      "contexts": ["Markdown 相对链接完整性"]
+      "contexts": ["Markdown 相对链接完整性", "固件逻辑单元测试（host）"]
     },
     "enforce_admins": false,
     "required_pull_request_reviews": null,
