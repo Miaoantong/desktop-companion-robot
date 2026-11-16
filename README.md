@@ -109,7 +109,7 @@ desktop-companion-robot
 ├── scripts/
 │   ├── check_docs.py          # 校验 Markdown 相对链接（CI 同一套）
 │   └── create_issues.py       # 发布 Issue；--setup 同步配置；--check-config 校验
-├── docs/                      # 01~07：规划、硬件、方案、路线、协作规范、亮点与证据
+├── docs/                      # 01~08：规划、硬件、日志、方案、路线、规范、亮点、技术图谱
 ├── hardware/                  # 接线说明（原理图 / 结构待补）
 └── firmware/                  # 单一工程，分层规则见 firmware/README.md
     ├── README.md              # 分层规则与构建约定
@@ -169,6 +169,7 @@ RESULT: PASS
 | [`05_学习路线.md`](docs/05_学习路线.md) | 18 周怎么学、每周验收题 |
 | [`06_仓库协作规范.md`](docs/06_仓库协作规范.md) | 分支、提交、里程碑、发布、工程化差距 |
 | [`07_技术亮点与证据链.md`](docs/07_技术亮点与证据链.md) | 亮点凭什么成立、拿什么证明、面试怎么答 |
+| [`08_技术图谱.md`](docs/08_技术图谱.md) | 一共要学 52 项什么技术、每项够用标准、什么时候学 |
 
 - 接线 → [`hardware/接线说明.md`](hardware/接线说明.md)
 - 固件工程约定 → [`firmware/README.md`](firmware/README.md)
