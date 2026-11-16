@@ -7,7 +7,7 @@
     python scripts/create_issues.py --dry-run                # 预览将创建哪些 Issue
     python scripts/create_issues.py --links                 # 输出预填新建 Issue 链接
     python scripts/create_issues.py                        # 创建 5 个阶段 Issue
-    python scripts/create_issues.py --update-bodies        # 按本地卡片覆盖远端 Issue 正文
+    python scripts/create_issues.py --update-bodies        # 按本地卡片同步远端 Issue 标题与正文
     python scripts/create_issues.py --check-config          # 校验 repo-meta.json（CI 同款）
     python scripts/create_issues.py --setup --dry-run       # 预览全部仓库配置变更
     python scripts/create_issues.py --setup                # 同步到 GitHub
@@ -190,35 +190,64 @@ def existing_titles(token: str) -> set[str]:
     return {issue["title"] for issue in fetch_issues(token)}
 
 
-def update_issue_bodies(token: str, cards: list[tuple[str, str]], dry_run: bool) -> int:
-    """按本地的 .github/ISSUES/P?.md 覆盖远端同名 Issue 的正文。
+def stage_prefix(title: str) -> str:
+    """取标题里的阶段前缀，如 "[P1] 电流感知触觉" → "[P1]"。用于标题变更后的兜底匹配。"""
+    head, sep, _ = title.partition("]")
+    return head + sep if title.startswith("[") and sep else title
 
-    Issue 是文档的**投影**，源头永远是卡片文件。卡片改了正文（比如改了目录路径），
-    远端不会自己变；这个模式让"改卡片 → 跑一条命令"成为唯一的同步路径。
-    只改正文，不动标题、标签、里程碑 —— 那些由 --setup 管。
+
+def update_issue_bodies(token: str, cards: list[tuple[str, str]], dry_run: bool) -> int:
+    """按本地的 .github/ISSUES/P?.md 覆盖远端对应 Issue 的标题与正文。
+
+    Issue 是文档的**投影**，源头永远是卡片文件。卡片改了标题或正文，远端不会自己变；
+    这个模式让"改卡片 → 跑一条命令"成为唯一的同步路径。
+    标题优先精确匹配，匹配不到再按 "[P?]" 前缀兜底（用于卡片改名后的追平）。
+    标签与里程碑由 --setup 管，这里不动。
     """
     issues = fetch_issues(token)
     by_title = {issue["title"]: issue for issue in issues}
+    by_stage = {}
+    for issue in issues:
+        by_stage.setdefault(stage_prefix(issue["title"]), issue)
     changed = 0
 
     for title, body in cards:
         issue = by_title.get(title)
+        renamed = False
+        if issue is None:
+            issue = by_stage.get(stage_prefix(title))
+            renamed = issue is not None
         if issue is None:
             print(f"[跳过] 远端没有这个 Issue：{title}（先跑一次不带参数的本脚本创建）")
             continue
-        if (issue.get("body") or "").strip() == body.strip():
-            print(f"[跳过] #{issue['number']} 正文已是最新")
+
+        body_same = (issue.get("body") or "").strip() == body.strip()
+        title_same = issue["title"] == title
+        if body_same and title_same:
+            print(f"[跳过] #{issue['number']} 标题与正文均已是最新")
             continue
+
+        payload: dict = {}
+        if not title_same:
+            payload["title"] = title
+        if not body_same:
+            payload["body"] = body
+
         if dry_run:
-            print(f"[预览] #{issue['number']} 将更新正文：{title}"
-                  f"（{len(issue.get('body') or '')} → {len(body)} 字符）")
+            what = []
+            if "title" in payload:
+                what.append(f"标题 {issue['title']} → {title}" if renamed or not title_same else "标题")
+            if "body" in payload:
+                what.append(f"正文 {len(issue.get('body') or '')} → {len(body)} 字符")
+            print(f"[预览] #{issue['number']} 将更新：" + "；".join(what))
             changed += 1
             continue
-        api_request(f"{API}/{issue['number']}", token, {"body": body}, method="PATCH")
+
+        api_request(f"{API}/{issue['number']}", token, payload, method="PATCH")
         print(f"[已更新] #{issue['number']} {title}")
         changed += 1
 
-    print(f"\n完成：正文更新 {changed} 个，共 {len(cards)} 张卡")
+    print(f"\n完成：更新 {changed} 个，共 {len(cards)} 张卡")
     return 0
 
 
@@ -446,7 +475,7 @@ def main() -> int:
     parser.add_argument("--setup", action="store_true", help="按 repo-meta.json 同步仓库非代码配置")
     parser.add_argument("--check-config", action="store_true", help="校验 repo-meta.json 结构（CI 同款）")
     parser.add_argument("--update-bodies", action="store_true",
-                        help="按本地卡片覆盖远端同名 Issue 的正文（配合 --dry-run 预览）")
+                        help="按本地卡片同步远端 Issue 的标题与正文（配合 --dry-run 预览）")
     args = parser.parse_args()
 
     if args.check_config:
