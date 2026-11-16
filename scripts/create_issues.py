@@ -7,6 +7,7 @@
     python scripts/create_issues.py --dry-run                # 预览将创建哪些 Issue
     python scripts/create_issues.py --links                 # 输出预填新建 Issue 链接
     python scripts/create_issues.py                        # 创建 5 个阶段 Issue
+    python scripts/create_issues.py --update-bodies        # 按本地卡片覆盖远端 Issue 正文
     python scripts/create_issues.py --check-config          # 校验 repo-meta.json（CI 同款）
     python scripts/create_issues.py --setup --dry-run       # 预览全部仓库配置变更
     python scripts/create_issues.py --setup                # 同步到 GitHub
@@ -176,13 +177,49 @@ def api_request(url: str, token: str, data=None, method: str | None = None):
         return json.loads(raw) if raw.strip() else None
 
 
-def existing_titles(token: str) -> set[str]:
+def fetch_issues(token: str) -> list[dict]:
+    """读取全部 Issue（含已关闭）。失败返回空列表，不阻断后续流程。"""
     try:
-        issues = api_request(f"{API}?state=all&per_page=100", token)
+        return api_request(f"{API}?state=all&per_page=100", token) or []
     except urllib.error.HTTPError as error:
         print(f"警告：读取现有 Issue 失败（HTTP {error.code}），跳过重复检查", file=sys.stderr)
-        return set()
-    return {issue["title"] for issue in issues}
+        return []
+
+
+def existing_titles(token: str) -> set[str]:
+    return {issue["title"] for issue in fetch_issues(token)}
+
+
+def update_issue_bodies(token: str, cards: list[tuple[str, str]], dry_run: bool) -> int:
+    """按本地的 .github/ISSUES/P?.md 覆盖远端同名 Issue 的正文。
+
+    Issue 是文档的**投影**，源头永远是卡片文件。卡片改了正文（比如改了目录路径），
+    远端不会自己变；这个模式让"改卡片 → 跑一条命令"成为唯一的同步路径。
+    只改正文，不动标题、标签、里程碑 —— 那些由 --setup 管。
+    """
+    issues = fetch_issues(token)
+    by_title = {issue["title"]: issue for issue in issues}
+    changed = 0
+
+    for title, body in cards:
+        issue = by_title.get(title)
+        if issue is None:
+            print(f"[跳过] 远端没有这个 Issue：{title}（先跑一次不带参数的本脚本创建）")
+            continue
+        if (issue.get("body") or "").strip() == body.strip():
+            print(f"[跳过] #{issue['number']} 正文已是最新")
+            continue
+        if dry_run:
+            print(f"[预览] #{issue['number']} 将更新正文：{title}"
+                  f"（{len(issue.get('body') or '')} → {len(body)} 字符）")
+            changed += 1
+            continue
+        api_request(f"{API}/{issue['number']}", token, {"body": body}, method="PATCH")
+        print(f"[已更新] #{issue['number']} {title}")
+        changed += 1
+
+    print(f"\n完成：正文更新 {changed} 个，共 {len(cards)} 张卡")
+    return 0
 
 
 def sync_about(token: str, config: dict, dry_run: bool) -> int:
@@ -408,6 +445,8 @@ def main() -> int:
     parser.add_argument("--links", action="store_true", help="输出 GitHub 预填新建 Issue 链接")
     parser.add_argument("--setup", action="store_true", help="按 repo-meta.json 同步仓库非代码配置")
     parser.add_argument("--check-config", action="store_true", help="校验 repo-meta.json 结构（CI 同款）")
+    parser.add_argument("--update-bodies", action="store_true",
+                        help="按本地卡片覆盖远端同名 Issue 的正文（配合 --dry-run 预览）")
     args = parser.parse_args()
 
     if args.check_config:
@@ -455,6 +494,18 @@ def main() -> int:
             )
             print(f"\n{title}\n{url}")
         return 0
+
+    if args.update_bodies:
+        token, source = resolve_token()
+        if not token:
+            print("未找到可用的 GitHub 凭据。可设置 GITHUB_TOKEN，或先跑一次 gh auth login。",
+                  file=sys.stderr)
+            return 1
+        print(f"凭据：{source}")
+        try:
+            return update_issue_bodies(token, cards, args.dry_run)
+        except urllib.error.HTTPError as error:
+            return http_error(error)
 
     if args.dry_run:
         for title, body in cards:
