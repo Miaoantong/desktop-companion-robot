@@ -75,12 +75,14 @@ docs(planning): 新增 18 周学习路线与低强度模式
 |---|---|
 | 阶段规划、方案、学习路线、日志、协作规范 | `docs/` |
 | 接线、原理图、BOM、结构图 | `hardware/` |
-| 可独立编译的固件工程 | `firmware/<编号>_<名称>/` |
-| 跨工程共享的协议定义、CRC、时间戳工具 | `firmware/shared/` |
+| 固件业务逻辑（不依赖 HAL） | `firmware/app/` |
+| 固件板级驱动（唯一碰 HAL 的层） | `firmware/bsp/` |
+| host 端单元测试 | `firmware/tests/` |
+| 上位机、波形分析、数据脚本 | `firmware/tools/` |
 | 文档检查等工具脚本 | `scripts/` |
 | Issue / PR 模板、CI | `.github/` |
 
-编号规则见 [`firmware/README.md`](firmware/README.md)：`里程碑XX` 是学习轨迹，数字前缀是产品轨迹，`90_` 是最终整合。
+分层规则见 [`firmware/README.md`](firmware/README.md)：**一个产品一个工程**，依赖方向 `app → bsp → platform`，学习轨迹用 git tag 记录而不用目录名。
 
 ---
 
